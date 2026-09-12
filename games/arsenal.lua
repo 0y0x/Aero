@@ -3513,12 +3513,12 @@ local function CreateModule(
 		local function SetAmmoValues()
 			for _, Ammo in ipairs(GetAllValues("Ammo")) do
 				SaveOriginal("Ammo", Ammo)
-				Ammo.Value = 299
+				Ammo.Value = 999
 			end
 
 			for _, StoredAmmo in ipairs(GetAllValues("StoredAmmo")) do
 				SaveOriginal("StoredAmmo", StoredAmmo)
-				StoredAmmo.Value = 499
+				StoredAmmo.Value = 299
 			end
 		end
 
