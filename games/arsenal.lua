@@ -505,6 +505,18 @@ local FlyAnimation = nil
 
 local SpeedValue = 30
 local SpeedEnabled = false
+local SpeedMode = "Velocity"
+local SpeedMoveMode = "MoveDirection"
+local SpeedTPFrequency = 0.1
+local SpeedPulseLength = 0.2
+local SpeedPulseDelay = 0.2
+local SpeedWallCheck = true
+local SpeedAutoJump = false
+local SpeedCustomJump = false
+local SpeedJumpPower = 30
+local SpeedConnection = nil
+local SpeedTPTiming = 0
+local SpeedPulseTiming = 0
 local ESPEnabled = false
 local TracersEnabled = false
 local NameTagsEnabled = false
@@ -635,8 +647,8 @@ local function SetFly(State)
 		CurrentHumanoid:ChangeState(Enum.HumanoidStateType.Physics)
 		PlayFlyAnimation(
 			Horizontal.Magnitude > 0
-			and FlyRunTrack
-			or FlyFallTrack
+				and FlyRunTrack
+				or FlyFallTrack
 		)
 		local TargetVelocity = Vector3.new(
 			Horizontal.X,
@@ -963,6 +975,193 @@ local function CreateCape()
 end
 
 ----------------------------------------------------------------
+----------------------------------------------------------------
+-- SPEED METHODS
+----------------------------------------------------------------
+
+local SpeedModes = {
+	"Velocity",
+	"Impulse",
+	"CFrame",
+	"TP",
+	"Pulse",
+	"WalkSpeed"
+}
+
+local SpeedMoveModes = {
+	"MoveDirection",
+	"Direct"
+}
+
+local SpeedRaycastParams = RaycastParams.new()
+SpeedRaycastParams.RespectCanCollide = true
+
+local function GetSpeedMoveVector(Humanoid)
+	if SpeedMoveMode == "MoveDirection" then
+		return Humanoid.MoveDirection
+	end
+
+	local Camera = workspace.CurrentCamera
+	if not Camera then
+		return Vector3.zero
+	end
+
+	local W = UIS:IsKeyDown(Enum.KeyCode.W) and -1 or 0
+	local S = UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0
+	local A = UIS:IsKeyDown(Enum.KeyCode.A) and -1 or 0
+	local D = UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0
+	local Input = Vector3.new(A + D, 0, W + S)
+
+	if Input.Magnitude == 0 then
+		return Vector3.zero
+	end
+
+	local Look = Vector3.new(Camera.CFrame.LookVector.X, 0, Camera.CFrame.LookVector.Z)
+	local Right = Vector3.new(Camera.CFrame.RightVector.X, 0, Camera.CFrame.RightVector.Z)
+
+	if Look.Magnitude == 0 or Right.Magnitude == 0 then
+		return Vector3.zero
+	end
+
+	Look = Look.Unit
+	Right = Right.Unit
+
+	local Move = Right * Input.X + Look * -Input.Z
+	return Move.Magnitude > 0 and Move.Unit or Vector3.zero
+end
+
+local function SpeedCanMove(Root, Move, Distance)
+	if not SpeedWallCheck or Move.Magnitude == 0 then
+		return true
+	end
+
+	SpeedRaycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+	return workspace:Raycast(Root.Position, Move * Distance, SpeedRaycastParams) == nil
+end
+
+local function StopSpeed()
+	if SpeedConnection then
+		SpeedConnection:Disconnect()
+		SpeedConnection = nil
+	end
+
+	SpeedTPTiming = 0
+	SpeedPulseTiming = 0
+
+	local Character = LocalPlayer.Character
+	local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+	if Humanoid then
+		Humanoid.WalkSpeed = 16
+	end
+end
+
+local function StartSpeed()
+	if SpeedConnection then
+		SpeedConnection:Disconnect()
+	end
+
+	SpeedTPTiming = 0
+	SpeedPulseTiming = 0
+
+	SpeedConnection = RunService.Heartbeat:Connect(function(DeltaTime)
+		if not SpeedEnabled then
+			return
+		end
+
+		local Character = LocalPlayer.Character
+		local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+		local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+
+		if not Humanoid or not Root or Humanoid.Health <= 0 then
+			return
+		end
+
+		if Humanoid:GetState() == Enum.HumanoidStateType.Climbing then
+			return
+		end
+
+		if type(shared.AeroSpeed) == "number" then
+			SpeedValue = math.clamp(shared.AeroSpeed, 0, 150)
+		else
+			shared.AeroSpeed = SpeedValue
+		end
+
+		local Move = GetSpeedMoveVector(Humanoid)
+		local CurrentVelocity = Root.AssemblyLinearVelocity
+		local Speed = SpeedValue
+
+		if SpeedMode == "WalkSpeed" then
+			Humanoid.WalkSpeed = Speed
+		elseif Move.Magnitude > 0 then
+			if SpeedMode == "Velocity" then
+				if SpeedCanMove(Root, Move, Speed * DeltaTime) then
+					Root.AssemblyLinearVelocity = Vector3.new(
+						Move.X * Speed,
+						CurrentVelocity.Y,
+						Move.Z * Speed
+					)
+				end
+			elseif SpeedMode == "Impulse" then
+				if SpeedCanMove(Root, Move, Speed * DeltaTime) then
+					local TargetVelocity = Vector3.new(
+						Move.X * Speed,
+						CurrentVelocity.Y,
+						Move.Z * Speed
+					)
+					Root:ApplyImpulse((TargetVelocity - CurrentVelocity) * Root.AssemblyMass)
+				end
+			elseif SpeedMode == "CFrame" then
+				local Distance = Speed * DeltaTime
+				if SpeedCanMove(Root, Move, Distance) then
+					Root.CFrame = Root.CFrame + Move * Distance
+				end
+			elseif SpeedMode == "TP" then
+				SpeedTPTiming += DeltaTime
+				local Frequency = math.max(SpeedTPFrequency, 0.01)
+				if SpeedTPTiming >= Frequency then
+					SpeedTPTiming -= Frequency
+					local Distance = Speed * Frequency
+					if SpeedCanMove(Root, Move, Distance) then
+						Root.CFrame = Root.CFrame + Move * Distance
+					end
+				end
+			elseif SpeedMode == "Pulse" then
+				SpeedPulseTiming += DeltaTime
+				local Cycle = SpeedPulseLength + SpeedPulseDelay
+				if Cycle <= 0 then
+					Cycle = 0.01
+				end
+				if SpeedPulseTiming >= Cycle then
+					SpeedPulseTiming -= Cycle
+				end
+				if SpeedPulseTiming <= SpeedPulseLength then
+					if SpeedCanMove(Root, Move, Speed * DeltaTime) then
+						Root.AssemblyLinearVelocity = Vector3.new(
+							Move.X * Speed,
+							CurrentVelocity.Y,
+							Move.Z * Speed
+						)
+					end
+				end
+			end
+		elseif SpeedMode ~= "WalkSpeed" then
+			-- Keep horizontal velocity from the selected method from fighting normal movement.
+			if SpeedMode == "Velocity" or SpeedMode == "Impulse" or SpeedMode == "Pulse" then
+				Root.AssemblyLinearVelocity = Vector3.new(0, CurrentVelocity.Y, 0)
+			end
+		end
+
+		if SpeedAutoJump and Humanoid.FloorMaterial ~= Enum.Material.Air and Move.Magnitude > 0 then
+			if SpeedCustomJump then
+				local Velocity = Root.AssemblyLinearVelocity
+				Root.AssemblyLinearVelocity = Vector3.new(Velocity.X, SpeedJumpPower, Velocity.Z)
+			else
+				Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+			end
+		end
+	end)
+end
+
 ----------------------------------------------------------------
 -- DRAWING ESP
 ----------------------------------------------------------------
@@ -2177,23 +2376,10 @@ local function CreateModule(
 
 			SpeedEnabled = State
 
-			local Character =
-				LocalPlayer.Character
-
-			local Humanoid =
-				Character
-				and Character:
-				FindFirstChildOfClass(
-					"Humanoid"
-				)
-
-			if Humanoid then
-
-				Humanoid.WalkSpeed =
-					State
-					and SpeedValue
-					or 16
-
+			if State then
+				StartSpeed()
+			else
+				StopSpeed()
 			end
 
 			----------------------------------------------------
@@ -2468,6 +2654,132 @@ local function CreateModule(
 	end
 
 	--------------------------------------------------------
+	-- DROPDOWN API
+	--------------------------------------------------------
+
+	function ModuleAPI:CreateDropdown(DropdownData)
+		local DropdownName = DropdownData.Name or "Dropdown"
+		local List = DropdownData.List or {}
+		local Selected = DropdownData.Default or List[1]
+		local Open = false
+
+		local Container = New("Frame", {
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundTransparency = 1,
+			ClipsDescendants = false
+		}, Settings)
+
+		local Label = New("TextLabel", {
+			Position = UDim2.fromOffset(8, 0),
+			Size = UDim2.new(0.45, 0, 1, 0),
+			BackgroundTransparency = 1,
+			Text = DropdownName,
+			TextColor3 = C.Text,
+			TextSize = 10,
+			Font = Enum.Font.GothamMedium,
+			TextXAlignment = Enum.TextXAlignment.Left
+		}, Container)
+
+		local Button = New("TextButton", {
+			Position = UDim2.new(0.45, 0, 0, 3),
+			Size = UDim2.new(0.55, -8, 0, 28),
+			BackgroundColor3 = C.Panel2,
+			BorderSizePixel = 0,
+			Text = tostring(Selected),
+			TextColor3 = C.Text,
+			TextSize = 9,
+			Font = Enum.Font.Gotham,
+			AutoButtonColor = false,
+			ZIndex = 50
+		}, Container)
+
+		Corner(Button, 4)
+		Stroke(Button)
+
+		local OptionsFrame = New("Frame", {
+			Position = UDim2.new(0.45, 0, 0, 34),
+			Size = UDim2.new(0.55, -8, 0, 0),
+			BackgroundColor3 = C.Panel2,
+			BorderSizePixel = 0,
+			Visible = false,
+			ZIndex = 100
+		}, Container)
+
+		Corner(OptionsFrame, 4)
+		Stroke(OptionsFrame)
+
+		local Layout = New("UIListLayout", {
+			Padding = UDim.new(0, 1),
+			SortOrder = Enum.SortOrder.LayoutOrder
+		}, OptionsFrame)
+
+		local function SetValue(Value, Silent)
+			Selected = Value
+			Button.Text = tostring(Value)
+			if DropdownData.Function and not Silent then
+				DropdownData.Function(Value)
+			end
+		end
+
+		for Index, Value in ipairs(List) do
+			local Option = New("TextButton", {
+				Size = UDim2.new(1, 0, 0, 26),
+				BackgroundColor3 = C.Panel2,
+				BorderSizePixel = 0,
+				Text = tostring(Value),
+				TextColor3 = C.Text,
+				TextSize = 9,
+				Font = Enum.Font.Gotham,
+				AutoButtonColor = false,
+				LayoutOrder = Index,
+				ZIndex = 101
+			}, OptionsFrame)
+
+			Option.MouseEnter:Connect(function()
+				Tween(Option, {BackgroundColor3 = C.Hover}, 0.1)
+			end)
+
+			Option.MouseLeave:Connect(function()
+				Tween(Option, {BackgroundColor3 = C.Panel2}, 0.1)
+			end)
+
+			Option.MouseButton1Click:Connect(function()
+				SetValue(Value)
+				Open = false
+				OptionsFrame.Visible = false
+				OptionsFrame.Size = UDim2.new(0.55, -8, 0, 0)
+				Container.Size = UDim2.new(1, 0, 0, 34)
+			end)
+		end
+
+		Button.MouseButton1Click:Connect(function()
+			Open = not Open
+			OptionsFrame.Visible = Open
+			if Open then
+				local Height = math.min(#List * 26, 156)
+				OptionsFrame.Size = UDim2.new(0.55, -8, 0, Height)
+				Container.Size = UDim2.new(1, 0, 0, 34 + Height)
+			else
+				OptionsFrame.Size = UDim2.new(0.55, -8, 0, 0)
+				Container.Size = UDim2.new(1, 0, 0, 34)
+			end
+		end)
+
+		if DropdownData.Function then
+			DropdownData.Function(Selected)
+		end
+
+		return {
+			Name = DropdownName,
+			Frame = Container,
+			SetValue = SetValue,
+			GetValue = function()
+				return Selected
+			end
+		}
+	end
+
+	--------------------------------------------------------
 	-- COLOR SLIDER API
 	--------------------------------------------------------
 
@@ -2561,6 +2873,26 @@ local function CreateModule(
 	end
 	if Data.Name == "Speed" then
 
+		ModuleAPI:CreateDropdown({
+			Name = "Mode",
+			List = SpeedModes,
+			Default = SpeedMode,
+			Function = function(Value)
+				SpeedMode = Value
+				SpeedTPTiming = 0
+				SpeedPulseTiming = 0
+			end
+		})
+
+		ModuleAPI:CreateDropdown({
+			Name = "Move Mode",
+			List = SpeedMoveModes,
+			Default = SpeedMoveMode,
+			Function = function(Value)
+				SpeedMoveMode = Value
+			end
+		})
+
 		CreateSlider(
 			Settings,
 			"Speed",
@@ -2570,11 +2902,77 @@ local function CreateModule(
 			0,
 			function(Value)
 				SpeedValue = math.round(Value)
-				if Enabled then
-					local Character = LocalPlayer.Character
-					local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-					if Humanoid then Humanoid.WalkSpeed = SpeedValue end
-				end
+				shared.AeroSpeed = SpeedValue
+			end
+		)
+
+		CreateSlider(
+			Settings,
+			"TP Frequency",
+			0.01,
+			1,
+			SpeedTPFrequency,
+			2,
+			function(Value)
+				SpeedTPFrequency = Value
+			end
+		)
+
+		CreateSlider(
+			Settings,
+			"Pulse Length",
+			0,
+			1,
+			SpeedPulseLength,
+			2,
+			function(Value)
+				SpeedPulseLength = Value
+			end
+		)
+
+		CreateSlider(
+			Settings,
+			"Pulse Delay",
+			0,
+			1,
+			SpeedPulseDelay,
+			2,
+			function(Value)
+				SpeedPulseDelay = Value
+			end
+		)
+
+		ModuleAPI:CreateToggle({
+			Name = "Wall Check",
+			Default = SpeedWallCheck,
+			Function = function(State)
+				SpeedWallCheck = State
+			end
+		})
+
+		ModuleAPI:CreateToggle({
+			Name = "AutoJump",
+			Function = function(State)
+				SpeedAutoJump = State
+			end
+		})
+
+		ModuleAPI:CreateToggle({
+			Name = "Custom Jump",
+			Function = function(State)
+				SpeedCustomJump = State
+			end
+		})
+
+		CreateSlider(
+			Settings,
+			"Jump Power",
+			1,
+			50,
+			SpeedJumpPower,
+			0,
+			function(Value)
+				SpeedJumpPower = math.round(Value)
 			end
 		)
 
@@ -3513,12 +3911,12 @@ local function CreateModule(
 		local function SetAmmoValues()
 			for _, Ammo in ipairs(GetAllValues("Ammo")) do
 				SaveOriginal("Ammo", Ammo)
-				Ammo.Value = 999
+				Ammo.Value = 299
 			end
 
 			for _, StoredAmmo in ipairs(GetAllValues("StoredAmmo")) do
 				SaveOriginal("StoredAmmo", StoredAmmo)
-				StoredAmmo.Value = 299
+				StoredAmmo.Value = 499
 			end
 		end
 
@@ -3598,6 +3996,10 @@ local function CreateModule(
 			Cleanup = function()
 				StopCapture()
 				SetEnabled(false, true)
+				if Data.Name == "Speed" then
+					StopSpeed()
+					shared.AeroSpeed = nil
+				end
 				for _, Toggle in ipairs(ChildToggles) do
 					Toggle.SetEnabled(false, true)
 				end
@@ -3828,7 +4230,7 @@ local UninjectButton = New("TextButton", {
 	TextSize = 10,
 	Font = Enum.Font.GothamMedium,
 	AutoButtonColor = false
-	
+
 }, Footer)
 
 Corner(UninjectButton, 4)
@@ -4125,11 +4527,7 @@ LocalPlayer.CharacterAdded:Connect(
 		end
 
 		if SpeedEnabled then
-			local Character = LocalPlayer.Character
-			local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-			if Humanoid then
-				Humanoid.WalkSpeed = SpeedValue
-			end
+			StartSpeed()
 		end
 
 	end
@@ -4145,4 +4543,3 @@ Notify(
 	"Aero",
 	"Loaded successfully"
 )
-print("ar")
