@@ -1,14 +1,10 @@
-local BASE_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/"
+local BASE_URL = "https://raw.githubusercontent.com/0y0x/Aero/refs/heads/main/"
 
 local Games = {
     [286090429] = "games/arsenal.lua",
 }
 
-local ScriptURL = Games[game.PlaceId]
-
-if not ScriptURL then
-    ScriptURL = "universal.lua"
-end
+local ScriptURL = Games[game.PlaceId] or "universal.lua"
 
 local Success, Source = pcall(function()
     return game:HttpGet(BASE_URL .. ScriptURL)
