@@ -507,16 +507,11 @@ local SpeedValue = 30
 local SpeedEnabled = false
 local SpeedMode = "Velocity"
 local SpeedMoveMode = "MoveDirection"
-local SpeedTPFrequency = 0.1
-local SpeedPulseLength = 0.2
-local SpeedPulseDelay = 0.2
 local SpeedWallCheck = true
 local SpeedAutoJump = false
 local SpeedCustomJump = false
 local SpeedJumpPower = 30
 local SpeedConnection = nil
-local SpeedTPTiming = 0
-local SpeedPulseTiming = 0
 local ESPEnabled = false
 local TracersEnabled = false
 local NameTagsEnabled = false
@@ -647,8 +642,8 @@ local function SetFly(State)
 		CurrentHumanoid:ChangeState(Enum.HumanoidStateType.Physics)
 		PlayFlyAnimation(
 			Horizontal.Magnitude > 0
-				and FlyRunTrack
-				or FlyFallTrack
+			and FlyRunTrack
+			or FlyFallTrack
 		)
 		local TargetVelocity = Vector3.new(
 			Horizontal.X,
@@ -981,10 +976,7 @@ end
 
 local SpeedModes = {
 	"Velocity",
-	"Impulse",
 	"CFrame",
-	"TP",
-	"Pulse",
 	"WalkSpeed"
 }
 
@@ -1045,9 +1037,6 @@ local function StopSpeed()
 		SpeedConnection = nil
 	end
 
-	SpeedTPTiming = 0
-	SpeedPulseTiming = 0
-
 	local Character = LocalPlayer.Character
 	local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
 	if Humanoid then
@@ -1059,9 +1048,6 @@ local function StartSpeed()
 	if SpeedConnection then
 		SpeedConnection:Disconnect()
 	end
-
-	SpeedTPTiming = 0
-	SpeedPulseTiming = 0
 
 	SpeedConnection = RunService.Heartbeat:Connect(function(DeltaTime)
 		if not SpeedEnabled then
@@ -1092,6 +1078,15 @@ local function StartSpeed()
 
 		if SpeedMode == "WalkSpeed" then
 			Humanoid.WalkSpeed = Speed
+		elseif SpeedMode == "CFrame" then
+			-- Prevent normal Humanoid movement from being added to CFrame movement.
+			Humanoid.WalkSpeed = 0
+			if Move.Magnitude > 0 then
+				local Distance = Speed * DeltaTime
+				if SpeedCanMove(Root, Move, Distance) then
+					Root.CFrame = Root.CFrame + Move * Distance
+				end
+			end
 		elseif Move.Magnitude > 0 then
 			if SpeedMode == "Velocity" then
 				if SpeedCanMove(Root, Move, Speed * DeltaTime) then
@@ -1101,54 +1096,9 @@ local function StartSpeed()
 						Move.Z * Speed
 					)
 				end
-			elseif SpeedMode == "Impulse" then
-				if SpeedCanMove(Root, Move, Speed * DeltaTime) then
-					local TargetVelocity = Vector3.new(
-						Move.X * Speed,
-						CurrentVelocity.Y,
-						Move.Z * Speed
-					)
-					Root:ApplyImpulse((TargetVelocity - CurrentVelocity) * Root.AssemblyMass)
-				end
-			elseif SpeedMode == "CFrame" then
-				local Distance = Speed * DeltaTime
-				if SpeedCanMove(Root, Move, Distance) then
-					Root.CFrame = Root.CFrame + Move * Distance
-				end
-			elseif SpeedMode == "TP" then
-				SpeedTPTiming += DeltaTime
-				local Frequency = math.max(SpeedTPFrequency, 0.01)
-				if SpeedTPTiming >= Frequency then
-					SpeedTPTiming -= Frequency
-					local Distance = Speed * Frequency
-					if SpeedCanMove(Root, Move, Distance) then
-						Root.CFrame = Root.CFrame + Move * Distance
-					end
-				end
-			elseif SpeedMode == "Pulse" then
-				SpeedPulseTiming += DeltaTime
-				local Cycle = SpeedPulseLength + SpeedPulseDelay
-				if Cycle <= 0 then
-					Cycle = 0.01
-				end
-				if SpeedPulseTiming >= Cycle then
-					SpeedPulseTiming -= Cycle
-				end
-				if SpeedPulseTiming <= SpeedPulseLength then
-					if SpeedCanMove(Root, Move, Speed * DeltaTime) then
-						Root.AssemblyLinearVelocity = Vector3.new(
-							Move.X * Speed,
-							CurrentVelocity.Y,
-							Move.Z * Speed
-						)
-					end
-				end
 			end
-		elseif SpeedMode ~= "WalkSpeed" then
-			-- Keep horizontal velocity from the selected method from fighting normal movement.
-			if SpeedMode == "Velocity" or SpeedMode == "Impulse" or SpeedMode == "Pulse" then
-				Root.AssemblyLinearVelocity = Vector3.new(0, CurrentVelocity.Y, 0)
-			end
+		elseif SpeedMode == "Velocity" then
+			Root.AssemblyLinearVelocity = Vector3.new(0, CurrentVelocity.Y, 0)
 		end
 
 		if SpeedAutoJump and Humanoid.FloorMaterial ~= Enum.Material.Air and Move.Magnitude > 0 then
@@ -2879,8 +2829,6 @@ local function CreateModule(
 			Default = SpeedMode,
 			Function = function(Value)
 				SpeedMode = Value
-				SpeedTPTiming = 0
-				SpeedPulseTiming = 0
 			end
 		})
 
@@ -2903,42 +2851,6 @@ local function CreateModule(
 			function(Value)
 				SpeedValue = math.round(Value)
 				shared.AeroSpeed = SpeedValue
-			end
-		)
-
-		CreateSlider(
-			Settings,
-			"TP Frequency",
-			0.01,
-			1,
-			SpeedTPFrequency,
-			2,
-			function(Value)
-				SpeedTPFrequency = Value
-			end
-		)
-
-		CreateSlider(
-			Settings,
-			"Pulse Length",
-			0,
-			1,
-			SpeedPulseLength,
-			2,
-			function(Value)
-				SpeedPulseLength = Value
-			end
-		)
-
-		CreateSlider(
-			Settings,
-			"Pulse Delay",
-			0,
-			1,
-			SpeedPulseDelay,
-			2,
-			function(Value)
-				SpeedPulseDelay = Value
 			end
 		)
 
@@ -3911,12 +3823,12 @@ local function CreateModule(
 		local function SetAmmoValues()
 			for _, Ammo in ipairs(GetAllValues("Ammo")) do
 				SaveOriginal("Ammo", Ammo)
-				Ammo.Value = 999
+				Ammo.Value = 299
 			end
 
 			for _, StoredAmmo in ipairs(GetAllValues("StoredAmmo")) do
 				SaveOriginal("StoredAmmo", StoredAmmo)
-				StoredAmmo.Value = 299
+				StoredAmmo.Value = 999
 			end
 		end
 
@@ -4230,7 +4142,7 @@ local UninjectButton = New("TextButton", {
 	TextSize = 10,
 	Font = Enum.Font.GothamMedium,
 	AutoButtonColor = false
-
+	
 }, Footer)
 
 Corner(UninjectButton, 4)
@@ -4543,4 +4455,4 @@ Notify(
 	"Aero",
 	"Loaded successfully"
 )
-print("arsenal")
+\
