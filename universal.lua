@@ -12,7 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-UserInputService.InputBegan:Connect(function(Input, GameProcessed) if not GameProcessed and Input.KeyCode == Enum.KeyCode.LeftShift then MainFrame.Visible = not MainFrame.Visible end end)
+UIS.InputBegan:Connect(function(Input, GameProcessed) if not GameProcessed and Input.KeyCode == Enum.KeyCode.LeftShift then Main.Visible = not Main.Visible end end)
 ----------------------------------------------------------------
 -- CLEANUP
 ----------------------------------------------------------------
