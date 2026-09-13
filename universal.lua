@@ -12,7 +12,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-UIS.InputBegan:Connect(function(Input, GameProcessed) if not GameProcessed and Input.KeyCode == Enum.KeyCode.LeftShift then Main.Visible = not Main.Visible end end)
 ----------------------------------------------------------------
 -- CLEANUP
 ----------------------------------------------------------------
@@ -3768,9 +3767,6 @@ local function CreateModule(
 				for _, Toggle in ipairs(ChildToggles) do
 					Toggle.SetEnabled(false, true)
 				end
-				if ChildConnections.GunModsCleanup then
-					ChildConnections.GunModsCleanup()
-				end
 			end
 		}
 	)
@@ -4242,14 +4238,14 @@ UIS.InputBegan:Connect(function(Input, Processed)
 		return
 	end
 
-	if Input.KeyCode == Enum.KeyCode.RightShift then
+	if Input.KeyCode == Enum.KeyCode.LeftShift then
 		Main.Visible = not Main.Visible
 	end
 end)
 
 
 ----------------------------------------------------------------
--- RIGHT SHIFT
+-- LEFT SHIFT
 ----------------------------------------------------------------
 
 UIS.InputBegan:Connect(
@@ -4260,7 +4256,7 @@ UIS.InputBegan:Connect(
 		end
 
 		if Input.KeyCode ==
-			Enum.KeyCode.RightShift then
+			Enum.KeyCode.LeftShift then
 
 			Main.Visible =
 				not Main.Visible
